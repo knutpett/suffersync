@@ -45,22 +45,6 @@ INTERVALS_ICU_APIKEY = xxxxxxxxxxxxx
     sys.exit(0)
 
 
-def get_intervals_sport(sport):
-    """Translate Wahoo SYSTM sport type into intervals.icu type."""
-    if sport == "Cycling":
-        return "Ride"
-    elif sport == "Running":
-        return "Run"
-    elif sport == "Yoga":
-        return "Yoga"
-    elif sport == "Strength":
-        return "WeightTraining"
-    elif sport == "Swimming":
-        return "Swim"
-    else:
-        return sport
-
-
 def get_systm_token(url, username, password):
     """Returns Wahoo SYSTM API token."""
     payload = json.dumps({
@@ -88,6 +72,21 @@ def get_systm_token(url, username, password):
     rider_profile = response_json['data']['loginUser']['user']['profiles']['riderProfile']
     get_systm_profile(rider_profile)
     return token
+
+def get_intervals_sport(sport):
+    """Translate Wahoo SYSTM sport type into intervals.icu type."""
+    if sport == "Cycling":
+        return "Ride"
+    elif sport == "Running":
+        return "Run"
+    elif sport == "Yoga":
+        return "Yoga"
+    elif sport == "Strength":
+        return "WeightTraining"
+    elif sport == "Swimming":
+        return "Swim"
+    else:
+        return sport
 
 
 def get_systm_profile(profile):
@@ -145,6 +144,25 @@ def get_systm_workout(url, token, workout_id):
 
     response = call_api(url, "POST", headers, payload).text
     return response
+
+def get_systm_workout2(url, token, workout_id):
+    """Get Wahoo SYSTM details for specific workout and return response."""
+    payload = json.dumps({
+        "operationName": "GetWorkouts",
+        "variables": {
+            "id": workout_id
+        },
+        "query": "query GetWorkouts($id: ID) {workouts(id: $id) { id sortOrder sport stampImage bannerImage bestFor equipment { name description thumbnail __typename } details shortDescription level durationSeconds name triggers featuredRaces { name thumbnail darkBackgroundThumbnail __typename } metrics { intensityFactor tss ratings { nm ac map ftp __typename } __typename } brand nonAppWorkout notes tags imperatives { userSettings { birthday gender weight __typename } __typename } __typename}}"
+    })
+
+    headers = {
+        'Authorization': f'Bearer {token}',
+        'Content-Type': 'application/json'
+    }
+
+    response = call_api(url, "POST", headers, payload).json()
+    return response
+
 
 def get_library(url, token):
     payload = json.dumps({
@@ -427,69 +445,6 @@ def get_preview_plan_list(url, token):
     response = call_api(url, "POST", headers, payload).json()
     return response
 
-def get_intervals_icu_headers(api_key):
-    """Return headers with token for Wahoo SYSTM API."""
-    token = b64encode(f'API_KEY:{api_key}'.encode()).decode()
-    headers = {
-        'Authorization': f'Basic {token}',
-        'Content-Type': 'text/plain'
-    }
-    return headers
-
-
-def delete_intervals_icu_event(event_id, userid, api_key):
-    """Delete specific intervals.icu event and return response."""
-    url = f'https://intervals.icu/api/v1/athlete/{userid}/events/{event_id}'
-    headers = get_intervals_icu_headers(api_key)
-    response = call_api(url, "DELETE", headers)
-    return response
-
-
-def get_intervals_icu_events(oldest, newest, userid, api_key):
-    """Get intervals.icu events for specified date range and return response."""
-    url = f'https://intervals.icu/api/v1/athlete/{userid}/events?oldest={oldest}&newest={newest}'
-    headers = get_intervals_icu_headers(api_key)
-    response = call_api(url, "GET", headers)
-    return response
-
-
-def upload_to_intervals_icu(date, name, sport, userid, api_key, contents=None, moving_time=None, description=None):
-    """Upload workout to to intervals.icu and return response."""
-    url = f'https://intervals.icu/api/v1/athlete/{userid}/events'
-
-    # Set defaults
-    color = None
-    category = 'WORKOUT'
-
-    if sport == 'Event':
-        color = 'red'
-        category = 'NOTE'
-
-    if sport == 'Ride':
-        payload = json.dumps({
-            "color": color,
-            "category": category,
-            "start_date_local": date,
-            "type": sport,
-            "filename": name,
-            "file_contents": contents
-        })
-
-    else:
-        payload = json.dumps({
-            "color": color,
-            "start_date_local": date,
-            "description": description,
-            "category": category,
-            "name": name,
-            "type": sport,
-            "moving_time": moving_time
-        })
-
-    headers = get_intervals_icu_headers(api_key)
-    response = call_api(url, "POST", headers, payload)
-    return response
-
 
 def call_api(url, method, headers, payload=None):
     """Call REST API and return response."""
@@ -555,30 +510,23 @@ def main():
     plan_list = get_preview_plan_list(SYSTM_URL, systm_token)
     #plan_list = plan_list['data']
 
-    a1 = get_library(SYSTM_URL, systm_token)
-    a1 = a1['data']['library']
+    library = get_library(SYSTM_URL, systm_token)
+    library = library['data']['library']
 
-    # Retrieve all intervals.icu workouts for the date range
-    response = get_intervals_icu_events(START_DATE, END_DATE, INTERVALS_ICU_ID, INTERVALS_ICU_APIKEY)
-    response_json = response.json()
-    events = []
+    #print(json.dumps(library, indent=4, sort_keys=True))
+    #exit(0)
 
-    # Store existing intervals.icu events, delete if -d CLI argument was provided
-    for item in response_json:
-        start_date_local = item['start_date_local']
-        start_date_local = datetime.strptime(start_date_local, "%Y-%m-%dT00:00:00").date()
-        # Store intervals.icu event date, name & id in 'event' list
-        event = {"start_date_local": start_date_local, "name": item['name'], "id": item['id']}
-        events.append(event)
+    content_list = library['content']
+    for item in content_list:
+        name = item['name']
+        id = item['id']
+        id = '0ZwrgHd0dL'
+        workout_type = item['workoutType']
+        tss = item['metrics']['tss']
 
-        # If -d/--delete CLI argument was provided, delete the workout.
-        if args.delete:
-            print(f"Deleting workout {event['name']} on {event['start_date_local']}")
-            delete_intervals_icu_event(event['id'], INTERVALS_ICU_ID, INTERVALS_ICU_APIKEY)
+        workout_detail = get_systm_workout2(SYSTM_URL, systm_token, id)
 
-    if args.delete:
-        print('All workouts removed, start suffersync again without any arguments.')
-        sys.exit(0)
+        print(f'{id}: {name} ({workout_type}) TSS: {tss}')
 
     today = datetime.today().date()
 
@@ -596,42 +544,11 @@ def main():
             workout_name_underscores = re.sub("[ ,./]", "_", workout_name_remove_colon)
             filename = f'{workout_date_datetime}_{workout_name_underscores}'
 
-            try:
-                workout_id = item['prospects'][0]['workoutId']
-                workout_type = item['prospects'][0]['type']
+            workout_id = item['prospects'][0]['workoutId']
+            workout_type = item['prospects'][0]['type']
 
-                # get_intervals_sport will get the intervals.icu name for SYSTM's equivalent sport
-                sport = get_intervals_sport(workout_type)
-
-                # Skip Mental Training workouts.
-                if workout_type == 'MentalTraining':
-                    continue
-                # Non-ride workouts (run, strength, yoga) contain no information apart from duration and name, upload separately.
-                if sport != 'Ride':
-                    description = item['prospects'][0]['description']
-                    moving_time = round(float(item['prospects'][0]['plannedDuration']) * 3600)
-
-                    if sport == 'Yoga' and not UPLOAD_YOGA_WORKOUTS:
-                        continue
-                    elif sport == 'WeightTraining' and not UPLOAD_STRENGTH_WORKOUTS:
-                        continue
-                    elif sport == 'Run' and not UPLOAD_RUN_WORKOUTS:
-                        continue
-                    elif sport == 'Swim' and not UPLOAD_SWIM_WORKOUTS:
-                        continue
-                    else:
-                        if workout_date_datetime >= today or UPLOAD_PAST_WORKOUTS:
-                            for event in events:
-                                if event['start_date_local'] == workout_date_datetime and event['name'] == workout_name:
-                                    print(f"Removing {workout_date_datetime}: {event['name']} (id {event['id']}).")
-                                    delete_intervals_icu_event(event['id'], INTERVALS_ICU_ID, INTERVALS_ICU_APIKEY)
-                            response = upload_to_intervals_icu(workout_date_string, workout_name, sport, INTERVALS_ICU_ID, INTERVALS_ICU_APIKEY, description=description, moving_time=moving_time)
-                            if response.status_code == 200:
-                                print(f'Uploaded {workout_date_datetime}: {workout_name} ({sport})')
-                            continue
-
-            except Exception as err:
-                print(f'Error: {err}')
+            # get_intervals_sport will get the intervals.icu name for SYSTM's equivalent sport
+            sport = get_intervals_sport(workout_type)
 
             # Get specific workout
             workout_detail = get_systm_workout(SYSTM_URL, systm_token, workout_id)
@@ -718,28 +635,6 @@ def main():
                 print(f'{err}')
 
             f.close()
-
-            try:
-                # Get filename, for upload to intervals.icu
-                intervals_filename = f'{filename_zwo[17:]}'
-
-                # Open .zwo file and read contents
-                zwo_file = open(filename_zwo, 'r')
-                file_contents = zwo_file.read()
-
-                if workout_date_datetime >= today or UPLOAD_PAST_WORKOUTS:
-                    for event in events:
-                        if event['start_date_local'] == workout_date_datetime and (event['name'] == workout_name or event['name'] == workout_name_remove_colon):
-                            print(f"Removing {workout_date_datetime}: {event['name']} (id {event['id']}).")
-                            delete_intervals_icu_event(event['id'], INTERVALS_ICU_ID, INTERVALS_ICU_APIKEY)
-                    response = upload_to_intervals_icu(workout_date_string, intervals_filename, sport, INTERVALS_ICU_ID, INTERVALS_ICU_APIKEY, contents=file_contents)
-                    if response.status_code == 200:
-                        print(f'Uploaded {workout_date_datetime}: {workout_name} ({sport})')
-
-                zwo_file.close()
-            except Exception as err:
-                print(f'Something went wrong: {err}')
-
 
 if __name__ == "__main__":
     main()

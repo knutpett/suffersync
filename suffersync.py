@@ -146,6 +146,287 @@ def get_systm_workout(url, token, workout_id):
     response = call_api(url, "POST", headers, payload).text
     return response
 
+def get_library(url, token):
+    payload = json.dumps({
+        "operationName": "library",
+        "variables": {
+            "appInformation": {
+                "platform": "web",
+                "version": "7.12.0-web.2141",
+                "installId": "F215B34567B35AC815329A53A2B696E5"
+            },
+            "locale": "en"
+        },
+        "query": """query library($locale: Locale!, $queryParams: QueryParams, $appInformation: AppInformation!) {
+  library(locale: $locale, queryParams: $queryParams, appInformation: $appInformation) {
+    config {
+      ...LibraryConfigFragment
+      __typename
+    }
+    channels {
+      id
+      name
+      description
+      priority
+      icon
+      bannerImage
+      publishInfo {
+        publishDate
+        expirationDate
+        __typename
+      }
+      __typename
+    }
+    content {
+      id
+      name
+      mediaType
+      channel
+      workoutType
+      category
+      level
+      order
+      duration
+      lists {
+        title
+        viewLimit
+        items {
+          type
+          value
+          link {
+            name
+            url
+            action
+            __typename
+          }
+          __typename
+        }
+        __typename
+      }
+      equipment {
+        id
+        name
+        description
+        thumbnail
+        icon
+        link {
+          name
+          url
+          action
+          __typename
+        }
+        __typename
+      }
+      featured {
+        title
+        featuring {
+          icon
+          altText
+          __typename
+        }
+        __typename
+      }
+      metrics {
+        ratings {
+          ac
+          nm
+          map
+          ftp
+          __typename
+        }
+        tss
+        intensityFactor
+        if
+        __typename
+      }
+      workoutId
+      videoId
+      descriptions {
+        title
+        body
+        alerts {
+          icon
+          message
+          severity
+          __typename
+        }
+        __typename
+      }
+      publishInfo {
+        publishDate
+        expirationDate
+        __typename
+      }
+      bannerImage
+      posterImage
+      defaultImage
+      intervalDuration
+      intensity
+      roles
+      tags
+      featured {
+        title
+        featuring {
+          icon
+          altText
+          __typename
+        }
+        __typename
+      }
+      fitnessTest
+      subscriberTypes
+      __typename
+    }
+    sports {
+      id
+      workoutType
+      name
+      description
+      defaultImage
+      bannerImage
+      __typename
+    }
+    __typename
+  }
+}
+
+fragment LibraryConfigFragment on LibraryConfig {
+  configID
+  global {
+    content {
+      filterConfig {
+        ...GlobalFilterConfig
+        __typename
+      }
+      sortConfig {
+        ...SortConfigFragment
+        __typename
+      }
+      __typename
+    }
+    channel {
+      filterConfig {
+        ...GlobalFilterConfig
+        __typename
+      }
+      sortConfig {
+        ...SortConfigFragment
+        __typename
+      }
+      __typename
+    }
+    __typename
+  }
+  content {
+    workoutType
+    filterConfig {
+      ...ContentFilterConfig
+      __typename
+    }
+    sortConfig {
+      allowGlobals
+      default
+      ...SortConfigFragment
+      __typename
+    }
+    __typename
+  }
+  __typename
+}
+
+fragment GlobalFilterConfig on LibraryFilterConfig {
+  filters {
+    ...FiltersFragment
+    __typename
+  }
+  __typename
+}
+
+fragment FiltersFragment on LibraryFilterGroup {
+  key
+  type
+  displayName
+  allowAllText
+  hideOnPlatforms
+  dynamicallyGenerate {
+    field
+    __typename
+  }
+  options {
+    key
+    displayName
+    rules {
+      operation
+      parameter
+      field
+      __typename
+    }
+    __typename
+  }
+  __typename
+}
+
+fragment SortConfigFragment on LibrarySortConfig {
+  options {
+    key
+    displayName
+    field
+    hideOnPlatforms
+    __typename
+  }
+  __typename
+}
+
+fragment ContentFilterConfig on LibraryFilterConfig {
+  allowGlobals
+  filters {
+    ...FiltersFragment
+    __typename
+  }
+  __typename
+}
+"""})
+    
+    headers = {
+        'Authorization': f'Bearer {token}',
+        'Content-Type': 'application/json'
+    }
+
+    response = call_api(url, "POST", headers, payload).json()
+    return response
+
+
+def get_preview_plan_list(url, token):
+    payload = json.dumps({
+        "operationName": "GetPreviewPlanList",
+        "variables": {
+            "profile": {
+                "nm": 0,
+                "ac": 0,
+                "map": 0,
+                "ftp": 0,
+                "riderWeakness": "Sustained",
+#                "riderType": null
+            },
+            "queryParams": {
+                "limit": 2000
+            },
+            "appInfo": {
+                "platform": "web",
+                "version": "7.20.0-web.2456"
+            }
+        },
+        "query": "query GetPreviewPlanList($profile: Profile, $queryParams: QueryParams, $appInfo: AppInformation) {  previewPlan(profile: $profile, queryParams: $queryParams, appInformation: $appInfo) {    id    name    planDescription    weakness    grouping    category    subcategory    addOnIds    level    type    uniqueToPlan    fixedEndDate    volume    option    duration    progression    hidden    __typename  }}"
+    })
+
+    headers = {
+        'Authorization': f'Bearer {token}',
+        'Content-Type': 'application/json'
+    }
+
+    response = call_api(url, "POST", headers, payload).json()
+    return response
+
 def get_intervals_icu_headers(api_key):
     """Return headers with token for Wahoo SYSTM API."""
     token = b64encode(f'API_KEY:{api_key}'.encode()).decode()
@@ -270,6 +551,12 @@ def main():
 
     # Only get the workout portion of the returned data
     workouts = workouts['data']['userPlan']
+
+    plan_list = get_preview_plan_list(SYSTM_URL, systm_token)
+    #plan_list = plan_list['data']
+
+    a1 = get_library(SYSTM_URL, systm_token)
+    a1 = a1['data']['library']
 
     # Retrieve all intervals.icu workouts for the date range
     response = get_intervals_icu_events(START_DATE, END_DATE, INTERVALS_ICU_ID, INTERVALS_ICU_APIKEY)
