@@ -524,119 +524,104 @@ def main():
         workout_type = item['workoutType']
         tss = item['metrics']['tss']
 
-        workout_detail = get_systm_workout_json(SYSTM_URL, systm_token, workout_id)
-        workout = workout_detail['data']['workouts'][0];
+        workout_detail_json = get_systm_workout_json(SYSTM_URL, systm_token, workout_id)
+        workout = workout_detail_json['data']['workouts'][0];
         workout_name = workout['name']
 
         print(f' url_id: {url_id} workout_id: {workout_id}: "{name}" "{workout_name}" ({workout_type}) TSS: {tss}')
 
-    today = datetime.today().date()
+        workout_name_remove_colon = re.sub("[:]", "", workout_name)
+        workout_name_underscores = re.sub("[ ,./]", "_", workout_name_remove_colon)
+        filename = f'{workout_name_underscores}'
 
-    # For each workout, make sure there's a "plannedDate" field to avoid bogus entries.
-    for item in workouts:
-        if item['plannedDate']:
-            # Get plannedDate, convert to datetime & formatted string for further use
-            planned_date = item['plannedDate']
-            workout_date_datetime = datetime.strptime(planned_date, "%Y-%m-%dT%H:%M:%S.%fZ").date()
-            workout_date_string = workout_date_datetime.strftime('%Y-%m-%dT%H:%M:%S')
+        # get_intervals_sport will get the intervals.icu name for SYSTM's equivalent sport
+        sport = get_intervals_sport(workout_type)
 
-            # Get workout name and remove invalid characters to avoid filename issues.
-            workout_name = item['prospects'][0]['name']
-            workout_name_remove_colon = re.sub("[:]", "", workout_name)
-            workout_name_underscores = re.sub("[ ,./]", "_", workout_name_remove_colon)
-            filename = f'{workout_date_datetime}_{workout_name_underscores}'
+        # Get specific workout
+        workout_detail = get_systm_workout(SYSTM_URL, systm_token, workout_id)
 
-            workout_id = item['prospects'][0]['workoutId']
-            workout_type = item['prospects'][0]['type']
+        # Create .zwo files with workout details
+        filename_zwo = f'./zwo/{sport}/{filename}.zwo'
+        os.makedirs(os.path.dirname(filename_zwo), exist_ok=True)
 
-            # get_intervals_sport will get the intervals.icu name for SYSTM's equivalent sport
-            sport = get_intervals_sport(workout_type)
+        try:
+            # Workout details contain nested JSON, so use clean_workout() to handle this.
+            workout_json = clean_workout(workout_detail)
 
-            # Get specific workout
-            workout_detail = get_systm_workout(SYSTM_URL, systm_token, workout_id)
+            if sport == 'Ride':
+                sporttype = 'bike'
 
-            # Create .zwo files with workout details
-            filename_zwo = f'./zwo/{filename}.zwo'
-            os.makedirs(os.path.dirname(filename_zwo), exist_ok=True)
+            # If UPLOAD_DESCRIPTION is set, change description of workout to Wahoo SYSTM's description.
+            description = ''
 
-            try:
-                # Workout details contain nested JSON, so use clean_workout() to handle this.
-                workout_json = clean_workout(workout_detail)
+            # Escape XML from description
+            if UPLOAD_DESCRIPTION and workout_json['data']['workouts'][0]['details']:
+                description = workout_json['data']['workouts'][0]['details']
+                description = escape_xml(description)
 
-                if sport == 'Ride':
-                    sporttype = 'bike'
+            # 'triggers' contains the FTP values for the workout
+            workout_json = workout_json['data']['workouts'][0]['triggers']
 
-                # If UPLOAD_DESCRIPTION is set, change description of workout to Wahoo SYSTM's description.
-                description = ''
-
-                # Escape XML from description
-                if UPLOAD_DESCRIPTION and workout_json['data']['workouts'][0]['details']:
-                    description = workout_json['data']['workouts'][0]['details']
-                    description = escape_xml(description)
-
-                # 'triggers' contains the FTP values for the workout
-                workout_json = workout_json['data']['workouts'][0]['triggers']
-
-                f = open(filename_zwo, "w")
-                if not workout_json:
-                    # Report missing workout data and move to the next workout
-                    print(f'Workout {workout_name} does not contain any workout data.')
-                    f.write('No workout data found.')
-                    f.close()
-                    continue
-                else:
-                    text = f"""
+            f = open(filename_zwo, "w")
+            if not workout_json:
+                # Report missing workout data and move to the next workout
+                print(f'Workout {workout_name} does not contain any workout data.')
+                f.write('No workout data found.')
+                f.close()
+                continue
+            else:
+                text = f"""
 <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <workout_file>
-    <author></author>
-    <name>{workout_name}</name>
-    <description>{description}</description>
-    <sportType>{sporttype}</sportType>
-    <tags/>
-    <workout>"""
-                    f.write(text)
+<author></author>
+<name>{workout_name}</name>
+<description>{description}</description>
+<sportType>{sporttype}</sportType>
+<tags/>
+<workout>"""
+                f.write(text)
 
-                    for interval in range(len(workout_json)):
-                        for tracks in range(len(workout_json[interval]['tracks'])):
-                            for item in workout_json[interval]['tracks'][tracks]['objects']:
-                                power = None
-                                seconds = int(item['size'] / 1000)
-                                if 'ftp' in item['parameters']:
-                                    power = item['parameters']['ftp']['value']
-                                # Not sure if required, in my data this always seems to be the same as ftp
-                                if 'twentyMin' in item['parameters']:
-                                    twentyMin = item['parameters']['twentyMin']['value']
-                                    power = twentyMin
-                                    absolute_power = round(power * rider_ftp)
-                                # If map value exists, set ftp to the higher value of either map or ftp.
-                                if 'map' in item['parameters']:
-                                    map = item['parameters']['map']['value'] * round(rider_map / rider_ftp, 2)
-                                    power = map
-                                    absolute_power = round(power * rider_ftp)
-                                if 'ac' in item['parameters']:
-                                    ac = item['parameters']['ac']['value'] * round(rider_ac / rider_ftp, 2)
-                                    power = ac
-                                    absolute_power = round(power * rider_ftp)
-                                if 'nm' in item['parameters']:
-                                    nm = item['parameters']['nm']['value'] * round(rider_nm / rider_ftp, 2)
-                                    power = nm
-                                    absolute_power = round(power * rider_ftp)
-                                if power:
-                                    if 'rpm' in item['parameters']:
-                                        rpm = item['parameters']['rpm']['value']
-                                        text = f'\n\t\t<SteadyState show_avg="1" Cadence="{rpm}" Power="{power}" Duration="{seconds}"/><!-- abs power: {absolute_power} -->'
-                                    else:
-                                        text = f'\n\t\t<SteadyState show_avg="1" Power="{power}" Duration="{seconds}"/><!-- abs power: {absolute_power} -->'
-                                    f.write(text)
-                    text = r"""
-    </workout>
+                for interval in range(len(workout_json)):
+                    for tracks in range(len(workout_json[interval]['tracks'])):
+                        for item in workout_json[interval]['tracks'][tracks]['objects']:
+                            power = None
+                            seconds = int(item['size'] / 1000)
+                            if 'ftp' in item['parameters']:
+                                power = item['parameters']['ftp']['value']
+                            # Not sure if required, in my data this always seems to be the same as ftp
+                            if 'twentyMin' in item['parameters']:
+                                twentyMin = item['parameters']['twentyMin']['value']
+                                power = twentyMin
+                                absolute_power = round(power * rider_ftp)
+                            # If map value exists, set ftp to the higher value of either map or ftp.
+                            if 'map' in item['parameters']:
+                                map = item['parameters']['map']['value'] * round(rider_map / rider_ftp, 2)
+                                power = map
+                                absolute_power = round(power * rider_ftp)
+                            if 'ac' in item['parameters']:
+                                ac = item['parameters']['ac']['value'] * round(rider_ac / rider_ftp, 2)
+                                power = ac
+                                absolute_power = round(power * rider_ftp)
+                            if 'nm' in item['parameters']:
+                                nm = item['parameters']['nm']['value'] * round(rider_nm / rider_ftp, 2)
+                                power = nm
+                                absolute_power = round(power * rider_ftp)
+                            if power:
+                                if 'rpm' in item['parameters']:
+                                    rpm = item['parameters']['rpm']['value']
+                                    text = f'\n\t\t<SteadyState show_avg="1" Cadence="{rpm}" Power="{power}" Duration="{seconds}"/><!-- abs power: {absolute_power} -->'
+                                else:
+                                    text = f'\n\t\t<SteadyState show_avg="1" Power="{power}" Duration="{seconds}"/><!-- abs power: {absolute_power} -->'
+                                f.write(text)
+                text = r"""
+</workout>
 </workout_file>"""
-                    f.write(text)
+                f.write(text)
 
-            except Exception as err:
-                print(f'{err}')
+        except Exception as err:
+            print(f'{err}')
 
-            f.close()
+        f.close()
 
 if __name__ == "__main__":
     main()
