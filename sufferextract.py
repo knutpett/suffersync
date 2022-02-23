@@ -145,7 +145,7 @@ def get_systm_workout(url, token, workout_id):
     response = call_api(url, "POST", headers, payload).text
     return response
 
-def get_systm_workout2(url, token, workout_id):
+def get_systm_workout_json(url, token, workout_id):
     """Get Wahoo SYSTM details for specific workout and return response."""
     payload = json.dumps({
         "operationName": "GetWorkouts",
@@ -519,14 +519,16 @@ def main():
     content_list = library['content']
     for item in content_list:
         name = item['name']
-        id = item['id']
-        id = '0ZwrgHd0dL'
+        url_id = item['id']
+        workout_id = item['workoutId']
         workout_type = item['workoutType']
         tss = item['metrics']['tss']
 
-        workout_detail = get_systm_workout2(SYSTM_URL, systm_token, id)
+        workout_detail = get_systm_workout_json(SYSTM_URL, systm_token, workout_id)
+        workout = workout_detail['data']['workouts'][0];
+        workout_name = workout['name']
 
-        print(f'{id}: {name} ({workout_type}) TSS: {tss}')
+        print(f' url_id: {url_id} workout_id: {workout_id}: "{name}" "{workout_name}" ({workout_type}) TSS: {tss}')
 
     today = datetime.today().date()
 
